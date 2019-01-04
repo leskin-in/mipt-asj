@@ -1,0 +1,3 @@
+comment = 'Implementation of Tao-Deng-Stonebraker algorithm of approximate string JOINs with abbreviations'
+default_version = '0.1'
+relocatable = true
