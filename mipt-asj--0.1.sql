@@ -12,12 +12,15 @@ INSERT INTO mipt_asj.asj_metadata VALUES
 -- Train functions
 CREATE FUNCTION mipt_asj.calc_dict(oid, TEXT, oid, TEXT) RETURNS INT
     AS 'MODULE_PATHNAME', 'asj_calc_dict'
-    LANGUAGE C;
+    LANGUAGE C
+    VOLATILE;
 CREATE FUNCTION mipt_asj.calc_pairs(INT, oid, TEXT, oid, TEXT, REAL) RETURNS INT
     AS 'MODULE_PATHNAME', 'asj_calc_pairs'
-    LANGUAGE C;
+    LANGUAGE C
+    VOLATILE;
 
 -- asj comparator function
 CREATE FUNCTION mipt_asj.cmp(INT, TEXT, TEXT) RETURNS BOOLEAN
     AS 'MODULE_PATHNAME', 'asjcmp'
-    LANGUAGE C;
+    LANGUAGE C
+    VOLATILE;
