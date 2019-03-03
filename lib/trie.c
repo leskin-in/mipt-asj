@@ -1,10 +1,12 @@
+/*
+ * trie.c
+ *      Trie implementation in C99
+ *
+ * IDENTIFICATION
+ *	    contrib/mipt-asj/lib/trie.c
+ */
+
 #include "trie.h"
-
-#include <stdlib.h>
-#include <string.h>
-
-#include "postgres.h"
-
 
 struct trieptr {
     struct trie *trie;
@@ -35,7 +37,7 @@ stack_init(struct stack *s)
 {
     s->size = 256;
     s->fill = 0;
-    s->stack = palloc(s->size * sizeof(struct stack_node));
+    s->stack = palloc(s->size * sizeof(s->stack));
     return s->stack == NULL ? -1 : 0;
 }
 
@@ -49,8 +51,7 @@ stack_free(struct stack *s)
 static inline int
 stack_grow(struct stack *s)
 {
-    size_t newsize = s->size * 2 * sizeof(struct stack_node);
-    struct stack_node *resize = repalloc(s->stack, newsize);
+    struct stack_node *resize = repalloc(s->stack, s->size * 2 * sizeof(s->stack));
     if (resize == NULL) {
         stack_free(s);
         return -1;
@@ -89,8 +90,7 @@ struct trie *
 trie_create(void)
 {
     /* Root never needs to be resized. */
-    size_t tail_size = sizeof(struct trieptr) * 255;
-    struct trie *root = palloc(sizeof(*root) + tail_size);
+    struct trie *root = palloc(sizeof(*root) + sizeof(struct trieptr) * 255);
     if (root == NULL)
         return NULL;
     root->size = 255;
@@ -252,38 +252,41 @@ trie_search_subsequences_step(const struct trie *trie, const char *key, int key_
 
     if (trie->nchildren == 0) {
         // this is a leaf, return
-        char** container = palloc(sizeof(char*) * 1);
+        char** container = palloc(sizeof(*container));
         *container_ptr = container;
         container[0] = palloc(strlen(trie->data) + 1);
-        memcpy(container[0], trie->data, strlen(trie->data) + 1);
+        strcpy(container[0], (char*)trie->data);
         return 1;
     }
 
     // iterate over all characters
-    for (int i = key_start_pos; i <= strlen(key); i++) {
+    for (int i = key_start_pos; i < strlen(key); i++) {
         int first = 0;
         int last = trie->nchildren - 1;
         int middle;
         // binary search
         while (first <= last) {
             middle = (first + last) / 2;
-            struct trieptr *p = &trie->children[middle];
+            const struct trieptr *p = &trie->children[middle];
             if (p->c < key[i]) {
                 first = middle + 1;
             }
             else if (p->c == key[i]) {
                 // character found; run recursively and copy result to container
-                char*** temp = NULL;
-                int temp_length = trie_search_subsequences_step(p->trie, key, i + 1, temp);
-                if (temp_length == 0) {
-                    break;
+                char** temp = NULL;
+                int temp_length = trie_search_subsequences_step(p->trie, key, i + 1, &temp);
+                if (temp_length != 0) {
+                    *container_ptr = *container_ptr == NULL ?
+                        palloc(sizeof(**container_ptr) * temp_length) :
+                        repalloc(*container_ptr, sizeof(**container_ptr) * (container_length + temp_length));
+                    for (int j = 0; j < temp_length; j++) {
+                        (*container_ptr)[container_length + j] = palloc(strlen(temp[j]) + 1);
+                        strcpy((*container_ptr)[container_length + j], temp[j]);
+                        pfree(temp[j]);
+                    }
+                    pfree(temp);
+                    container_length += temp_length;
                 }
-                *container_ptr = repalloc(*container_ptr, sizeof(char*) * (container_length + temp_length));
-                for (int j = 0; j < temp_length; j++) {
-                    memcpy((*container_ptr)[container_length + j], (*temp)[j], strlen((*temp)[j]) + 1);
-                    container_length += 1;
-                }
-                pfree(temp);
                 break;
             }
             else {

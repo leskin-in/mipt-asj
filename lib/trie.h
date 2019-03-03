@@ -1,8 +1,17 @@
 #ifndef TRIE_H
 #define TRIE_H
 
-/**
- * C99 Trie Library
+/*
+ * trie.h
+ *      Trie implementation in C99
+ *
+ * IDENTIFICATION
+ *	    contrib/mipt-asj/lib/trie.h
+ *
+ * Adapted for PostgreSQL and mipt-asj. Changes include:
+ *  * Use palloc() and pfree() calls
+ *  * Add version of search() to check LCS in trie
+ *
  *
  * This trie associates an arbitrary void* pointer with a UTF-8,
  * NUL-terminated C string key. All lookups are O(n), n being the
@@ -22,13 +31,13 @@
  *
  * (c) Cristopher Wellons, https://github.com/skeeto/trie
  */
-/**
- * Adapted for PostgreSQL and mipt-asj. Changes include:
- *  * Use palloc() and pfree() calls
- *  * Add version of search() to check LCS in trie
- */
 
 #include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "postgres.h"
+
 
 struct trie;
 
@@ -39,12 +48,14 @@ struct trie *trie_create(void);
 
 /**
  * Destroys a trie created by trie_create().
+ *
  * @return 0 on success
  */
 int trie_free(struct trie *);
 
 /**
  * Finds for the data associated with KEY.
+ *
  * @return the previously inserted data
  */
 void *trie_search(const struct trie *, const char *key);
@@ -53,6 +64,7 @@ void *trie_search(const struct trie *, const char *key);
  * Insert or replace DATA associated with KEY. Inserting NULL is the
  * equivalent of unassociating that key, though no memory will be
  * released.
+ *
  * @return 0 on success
  *
  * For purposes of mipt-asj, data must be equal to key
@@ -60,10 +72,11 @@ void *trie_search(const struct trie *, const char *key);
 int trie_insert(struct trie *, const char *key, void *data);
 
 /**
- * Find all subsequences of given key that exist in trie and put them into container
- * @return number of subsequences found.
+ * Find all subsequences of given key that exist in trie and put them into container.
  *
- * Container will be allocated automatically using palloc
+ * Container will be allocated automatically using palloc.
+ *
+ * @return number of subsequences found.
  */
 int trie_search_subsequences(const struct trie *, const char *key, char ***container);
 
