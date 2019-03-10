@@ -12,25 +12,13 @@
 
 
 /**
- * @brief Internal representation of AbbreviationDictionary.
- */
-typedef struct {
-    unsigned long size;
-    char*** pairs;
-    /**
-     * Elements, already returned to user
-     */
-    unsigned long read;
-} AbbreviationDictionary;
-
-
-/**
  * @brief qsort comparator for pairs (full, abbreviation)
  *
  * Abbreviation is compared first, then full form
  */
 static int
-_compare_pair(const void* l, const void* r) {
+_compare_pair(const void* l, const void* r)
+{
     const char** pair_l = *(const char***)l;
     const char** pair_r = *(const char***)r;
     int result;
@@ -38,49 +26,6 @@ _compare_pair(const void* l, const void* r) {
     result = strcmp(pair_l[1], pair_r[1]);
     if (result == 0)
         result = strcmp(pair_l[0], pair_r[0]);
-    return result;
-}
-
-
-/**
- * @brief Return table name by given Oid. SPI must be prepared.
- *
- * @return palloc'ed pointer to table name
- * @return NULL if no requested table exists
- */
-static inline char*
-_get_table_name_by_oid(Oid oid) {
-    char query[32];
-    char* result;
-
-    sprintf(query, "SELECT %d::regclass;", oid);
-    if (SPI_execute(query, true, 0) < 0 || SPI_tuptable == NULL || SPI_processed != 1) {
-        return NULL;
-    }
-    result = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-    SPI_freetuptable(SPI_tuptable);
-
-    return result;
-}
-
-
-/**
- * Get null-terminated (C-string) TEXT parameter in palloc'ed memory, stored inside null-terminated string
- *
- * @return NULL if the given parameter is NULL
- */
-static inline char*
-_get_text_parameter(const void *PTR) {
-    const int L = PTR == NULL ? 0 : VARSIZE(PTR) - VARHDRSZ;
-    char* result;
-    if (PTR == NULL) {
-        return NULL;
-    }
-
-    result = palloc(L + 1);
-    memcpy(result, VARDATA(PTR), L);
-    result[L] = '\0';
-
     return result;
 }
 
@@ -97,7 +42,7 @@ _get_text_parameter(const void *PTR) {
  *
  * @return Abbreviation dictionary with properly initialized fields
  */
-static AbbreviationDictionary
+static StringPairRows
 _do_calc_dict(const Oid fullOid, const char* fullCol, const Oid abbrOid, const char* abbrCol)
 {
     char* fullTable;
@@ -106,7 +51,7 @@ _do_calc_dict(const Oid fullOid, const char* fullCol, const Oid abbrOid, const c
     struct trie* trie;
     char query[4096];
 
-    AbbreviationDictionary result = {.size = 0, .read = 0, .pairs = NULL};
+    StringPairRows result = {.size = 0, .read = 0, .pairs = NULL};
 
     char** abbrs = NULL;
     int abbrs_used = 0;
@@ -117,10 +62,8 @@ _do_calc_dict(const Oid fullOid, const char* fullCol, const Oid abbrOid, const c
 
     // Process call parameters
 
-    if ((fullTable = _get_table_name_by_oid(fullOid)) == NULL)
-        elog(ERROR, "Table with OID %d not found.", fullOid);
-    if ((abbrTable = _get_table_name_by_oid(abbrOid)) == NULL)
-        elog(ERROR, "Table with OID %d not found.", fullOid);
+    fullTable = get_table_name_by_oid(fullOid);
+    abbrTable = get_table_name_by_oid(abbrOid);
 
 
     // Create trie
@@ -219,12 +162,12 @@ _do_calc_dict(const Oid fullOid, const char* fullCol, const Oid abbrOid, const c
 
 /**
  * @brief Remove repeating pairs (full, abbreviation)
- * from AbbreviationDictionary in place
+ * from StringPairRows in place
  *
  * @param dict
  */
 static void
-_remove_duplicate_pairs(AbbreviationDictionary* dict)
+_remove_duplicate_pairs(StringPairRows* dict)
 {
     bool* pairs_to_stay;
     int pairs_to_stay_count = 1;  // At least 1 pair exists, 0 case is eliminated
@@ -275,13 +218,14 @@ _remove_duplicate_pairs(AbbreviationDictionary* dict)
 
 
 Datum
-calc_dict(PG_FUNCTION_ARGS) {
+calc_dict(PG_FUNCTION_ARGS)
+{
     MemoryContext oldcontext;
 
     FuncCallContext *funcctx;
     TupleDesc tupdesc;
     Datum result;
-    AbbreviationDictionary* dict;
+    StringPairRows* dict;
 
     if (SRF_IS_FIRSTCALL())
     {
@@ -291,7 +235,7 @@ calc_dict(PG_FUNCTION_ARGS) {
         char* fullCol;
         char* abbrCol;
 
-        AbbreviationDictionary calculated;
+        StringPairRows calculated;
 
         // Initialize funcctx
         funcctx = SRF_FIRSTCALL_INIT();
@@ -300,13 +244,13 @@ calc_dict(PG_FUNCTION_ARGS) {
             ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("Function returning record called in context that cannot accept type record")));
         }
         funcctx->attinmeta = TupleDescGetAttInMetadata(tupdesc);
-        funcctx->user_fctx = palloc(sizeof(AbbreviationDictionary));
+        funcctx->user_fctx = palloc(sizeof(StringPairRows));
 
         // Load function call parameters
         fullOid = PG_GETARG_OID(0);
         abbrOid = PG_GETARG_OID(2);
-        fullCol = _get_text_parameter(PG_GETARG_TEXT_P(1));
-        abbrCol = _get_text_parameter(PG_GETARG_TEXT_P(3));
+        fullCol = get_text_parameter(PG_GETARG_TEXT_P(1));
+        abbrCol = get_text_parameter(PG_GETARG_TEXT_P(3));
 
         // Calculate abbreviation dictionary
         SPI_connect();
@@ -316,7 +260,7 @@ calc_dict(PG_FUNCTION_ARGS) {
         _remove_duplicate_pairs(&calculated);
 
         // Copy abbreviation dictionary into new memory context
-        funcctx->user_fctx = palloc(sizeof(AbbreviationDictionary));
+        funcctx->user_fctx = palloc(sizeof(StringPairRows));
         dict = funcctx->user_fctx;
         dict->size = calculated.size;
         dict->read = 0;

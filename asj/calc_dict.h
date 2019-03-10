@@ -18,6 +18,7 @@
 #include "utils/builtins.h"
 #include "funcapi.h"
 
+#include "lib/common.h"
 #include "lib/trie.h"
 
 

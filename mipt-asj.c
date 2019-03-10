@@ -7,14 +7,6 @@
 PG_MODULE_MAGIC;
 #endif
 
-/**
- *
- */
-Datum
-asj_calc_pairs(PG_FUNCTION_ARGS)
-{
-    PG_RETURN_INT32(-1);
-}
 
 /**
  *
