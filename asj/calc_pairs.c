@@ -248,23 +248,17 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
     long result = (long)INT_MAX;
     long result_current;
 
-    // Check return conditions
-    if (i < 0) {
-        elog(WARNING, "Exit on 'i < 0'");
+    elog(DEBUG1, " >  _g() call parameters: i=%ld, l=%ld, t=%s, t_present=%d", i, l, t, *t_present);
+
+    // Check recursion base return conditions
+    if (l <= 0 || i < 0) {
+        if (*t_present && l == 0) {
+            result = 0;
+        }
+        elog(DEBUG1, "^^^    _g() stops at %ld", result);
         return result;
     }
-    if (l < 0) {
-        elog(WARNING, "Exit on 'l < 0'");
-        return result;
-    }
-    if (l == 0) {
-        elog(WARNING, "Exit on 'l == 0'");
-        return result;
-    }
-    if (i == 0 && l == 0) {
-        elog(WARNING, "Exit on 'i == 0 and l == 0'");
-        return result;
-    }
+
 
     // Calculate case 1: current token has no rules that apply to it
     {
@@ -292,6 +286,7 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
 
         for (unsigned long j = 0; j < rules.size; j++) {
             RuleApplication ra;
+            long result_current_rule = (long)INT_MAX;
 
             ra = _rule_apply((const char**)rules.rs[j], s, i);
 
@@ -299,11 +294,14 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
             if (ra.a_f.applies) {
                 TokenSequence rule_ts;
                 int ts_less = 0;
+                int comparation_result;
+
+                elog(DEBUG1, "\ta_f rule applies: aside %lu '%s' -> rside %lu '%s'", ra.a_f.aside, ra.rule[0], ra.a_f.rside, ra.rule[1]);
 
                 rule_ts = _tokenize(ra.rule[1], " ");
 
                 for (int t_i = 0; t_i < rule_ts.size; t_i++) {
-                    int comparation_result = _cmp_tokens(rule_ts.ts[t_i], t);
+                    comparation_result = _cmp_tokens(rule_ts.ts[t_i], t);
                     if (comparation_result == 0) {
                         *t_present = true;
                     }
@@ -312,9 +310,10 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
                     }
                 }
 
+                result_current_rule = _calculate_g(s, i - ra.a_f.aside, l - ra.a_f.rside, t, t_present, rules) + ts_less;
                 result_current = Min(
                     result_current,
-                    _calculate_g(s, i - ra.a_f.aside, l - ra.a_f.rside, t, t_present, rules) + ts_less
+                    result_current_rule
                 );
             }
 
@@ -322,6 +321,8 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
             if (ra.f_a.applies) {
                 int ts_less = 0;
                 int comparation_result;
+
+                elog(DEBUG1, "\tf_a rule applies: aside %lu '%s' -> rside %lu '%s'", ra.f_a.aside, ra.rule[1], ra.f_a.rside, ra.rule[0]);
 
                 comparation_result = _cmp_tokens(ra.rule[0], t);
                 if (comparation_result == 0) {
@@ -331,9 +332,10 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
                     ts_less += 1;
                 }
 
+                result_current_rule = _calculate_g(s, i - ra.f_a.aside, l - ra.f_a.rside, t, t_present, rules) + ts_less;
                 result_current = Min(
                     result_current,
-                    _calculate_g(s, i - ra.a_f.aside, l - ra.a_f.rside, t, t_present, rules) + ts_less
+                    result_current_rule
                 );
             }
         }
@@ -343,6 +345,7 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
         result = Min(result, result_current);
     }
 
+    elog(DEBUG1, "^^^    _g() returns %ld", result);
     return result;
 }
 
@@ -385,8 +388,6 @@ _remove_duplicate_joins(unsigned long*** joins_ptr, unsigned long joins_size)
     if (joins == NULL || joins_size == 0) {
         return joins_size;
     }
-
-    elog(DEBUG1, "Removing duplicates...");
 
     pg_qsort(joins, joins_size, sizeof(*joins), _cmp_ulong_pair_wrapped);
 
@@ -439,10 +440,12 @@ _remove_duplicate_joins(unsigned long*** joins_ptr, unsigned long joins_size)
  *
  * @param exactness
  *
+ * @param rescontext context to allocate result StringPairRows content in
+ *
  * @return StringPairRows
  */
 static StringPairRows
-_do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid tRoid, const char* tRcol_abbr, const char* tRcol_full, double exactness)
+_do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid tRoid, const char* tRcol_abbr, const char* tRcol_full, double exactness, MemoryContext rescontext)
 {
     char* t1;
     char* t2;
@@ -455,11 +458,15 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
     unsigned long rows_used[2] = {0, 0};
 
     RuleSequence rules = {0, NULL};
+    // Length of longest full form among all rules
+    unsigned long longest_rule_length = 0;
 
     unsigned long** joins;
     unsigned long joins_used = 0;
 
     StringPairRows results;
+
+    MemoryContext oldcontext;
 
 
     // Process call parameters
@@ -475,7 +482,7 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
     if (SPI_execute(query, true, 0) < 0 || SPI_tuptable == NULL) {
         elog(ERROR, "Could not SELECT rows from table '%s' (OID %d).", t1, t1oid);
     }
-    elog(INFO, "Processing %d rows...", SPI_processed);
+    elog(INFO, "Processing %d rows in first source...", SPI_processed);
     rows[0] = palloc(sizeof(*rows[0]) * SPI_processed);
     for (uint32 i = 0; i < SPI_processed; i++) {
         char* row = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 1);
@@ -490,7 +497,7 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
     if (SPI_execute(query, true, 0) < 0 || SPI_tuptable == NULL) {
         elog(ERROR, "Could not SELECT rows from table '%s' (OID %d).", t2, t2oid);
     }
-    elog(INFO, "Processing %d rows...", SPI_processed);
+    elog(INFO, "Processing %d rows in second source...", SPI_processed);
     rows[1] = palloc(sizeof(*rows[1]) * SPI_processed);
     for (uint32 i = 0; i < SPI_processed; i++) {
         char* row = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 1);
@@ -508,10 +515,11 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
     if (SPI_execute(query, true, 0) < 0 || SPI_tuptable == NULL) {
         elog(ERROR, "Could not SELECT rows from table '%s' (OID %d).", tR, tRoid);
     }
-    elog(INFO, "Processing %d rows...", SPI_processed);
+    elog(INFO, "%d rules found, processing...", SPI_processed);
     rules.rs = palloc(sizeof(*rules.rs) * SPI_processed);
     for (uint32 i = 0; i < SPI_processed; i++) {
         char* temp[2];
+        TokenSequence rule_full_seq;
         temp[0] = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 1);
         temp[1] = SPI_getvalue(SPI_tuptable->vals[i], SPI_tuptable->tupdesc, 2);
         if (temp[0] == NULL || temp[1] == NULL) {
@@ -522,24 +530,29 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
             rules.rs[rules.size][j] = temp[j];
         }
         rules.size += 1;
+        rule_full_seq = _tokenize(temp[1], " ");
+        longest_rule_length = Max(longest_rule_length, rule_full_seq.size);
     }
     SPI_freetuptable(SPI_tuptable);
 
 
     // Calculate prefix signatures for every row
 
+    elog(INFO, "Calculating prefix signatures...");
     for (unsigned char j = 0; j < 2; j++) {
         rows_signatures[j] = palloc(sizeof(*rows_signatures[j]) * rows_used[j]);
         for (unsigned long i = 0; i < rows_used[j]; i++) {
             rows_signatures[j][i] = _prefix_sig(rows[j][i], exactness);
+            elog(DEBUG1, "Prefix signature for rows[%u][%lu] is %lu symbols long", j, i, rows_signatures[j][i].size);
         }
     }
 
 
     // Calculate joins
 
-    joins = palloc(sizeof(*joins) * rows_used[0] * rows_used[1]);
-    for (unsigned long i = 0; i < rows_used[0] * rows_used[1]; i++) {
+    elog(INFO, "Calculating joins...");
+    joins = palloc(sizeof(*joins) * rows_used[0] * rows_used[1] * 2);
+    for (unsigned long i = 0; i < rows_used[0] * rows_used[1] * 2; i++) {
         joins[i] = palloc(sizeof(*joins[i]) * 2);
     }
 
@@ -550,19 +563,28 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
         const unsigned char ROW_U_INDEX = 1 - j;
 
         for (unsigned long pf_i = 0; pf_i < rows_used[ROW_PF_INDEX]; pf_i++) {
-            TokenSequence seq = rows_signatures[ROW_PF_INDEX][pf_i];
-            for (unsigned long token_i = 0; token_i < seq.size; token_i++) {
-                const char* token = seq.ts[token_i];
-                for (unsigned long u_i = 0; u_i < rows_used[ROW_U_INDEX]; u_i++) {
-                    TokenSequence seq_u = rows_signatures[ROW_U_INDEX][u_i];
-                    // XXX: Correct l calculation required here
-                    for (long l = 1; l < seq_u.size + 5; l++) {
+            for (unsigned long u_i = 0; u_i < rows_used[ROW_U_INDEX]; u_i++) {
+                TokenSequence seq = rows_signatures[ROW_PF_INDEX][pf_i];
+                TokenSequence seq_u = rows_signatures[ROW_U_INDEX][u_i];
+                elog(
+                    DEBUG1,
+                    "====== Calculating g() for [%u][%lu] (token source) and [%u][%lu] (sequence) ======",
+                    ROW_PF_INDEX, pf_i, ROW_U_INDEX, u_i
+                );
+                for (unsigned long token_i = 0; token_i < seq.size; token_i++) {
+                    const char* token = seq.ts[token_i];
+                    for (long l = seq_u.size + longest_rule_length; l > 0; l--) {
                         bool t_present = false;
                         long g = _calculate_g(seq_u, seq_u.size - 1, l, token, &t_present, rules);
+                        elog(DEBUG1, "=== g = %ld; _psl = %lu ===", g, _prefix_sig_length(l, exactness));
                         if (t_present && (g + 1 <= _prefix_sig_length(l, exactness))) {
+                            elog(DEBUG1, "=== [%u][%lu] ~=~ [%u][%lu] ===", ROW_PF_INDEX, pf_i, ROW_U_INDEX, u_i);
                             joins[joins_used][ROW_PF_INDEX] = pf_i;
                             joins[joins_used][ROW_U_INDEX] = u_i;
                             joins_used += 1;
+                            // Break cycle
+                            token_i = seq.size;
+                            break;
                         }
                     }
                 }
@@ -573,20 +595,24 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
 
     // Remove duplicate joins
 
+    elog(INFO, "Removing duplicates...");
     joins_used = _remove_duplicate_joins(&joins, joins_used);
 
 
-    // Build results and return
+    // Build 'results' and return
 
+    oldcontext = MemoryContextSwitchTo(rescontext);
     results.size = joins_used;
     results.read = 0;
     results.pairs = palloc(sizeof(*results.pairs) * results.size);
     for (unsigned long i = 0; i < joins_used; i++) {
         results.pairs[i] = palloc(sizeof(*results.pairs[results.read]) * 2);
         for (unsigned char j = 0; j < 2; j++) {
-            results.pairs[i][j] = rows[j][joins[i][j]];
+            results.pairs[i][j] = palloc(strlen(rows[j][joins[i][j]]) + 1);
+            strcpy(results.pairs[i][j], rows[j][joins[i][j]]);
         }
     }
+    MemoryContextSwitchTo(oldcontext);
 
     return results;
 }
@@ -595,20 +621,64 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
 Datum
 calc_pairs(PG_FUNCTION_ARGS)
 {
-    // // Function call parameters
-    // Oid fullOid;
-    // Oid abbrOid;
-    // char* fullCol;
-    // char* abbrCol;
+    MemoryContext oldcontext;
 
-    // // Load function call parameters
-    // fullOid = PG_GETARG_OID(0);
-    // abbrOid = PG_GETARG_OID(2);
-    // fullCol = get_text_parameter(PG_GETARG_TEXT_P(1));
-    // abbrCol = get_text_parameter(PG_GETARG_TEXT_P(3));
+    FuncCallContext *funcctx;
+    TupleDesc tupdesc;
+    Datum result;
+    StringPairRows* pairs;
 
-    // Calculate abbreviation dictionary
-    SPI_connect();
+    if (SRF_IS_FIRSTCALL())
+    {
+        // Function call parameters
+        Oid t1oid;
+        Oid t2oid;
+        Oid tRoid;
+        char* t1col;
+        char* t2col;
+        char* tRcol_full;
+        char* tRcol_abbr;
+        double exactness;
 
-    PG_RETURN_INT32(-1);
+        StringPairRows calculated;
+
+        // Initialize funcctx
+        funcctx = SRF_FIRSTCALL_INIT();
+        oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+        if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE) {
+            ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("Function returning record called in context that cannot accept type record")));
+        }
+        funcctx->attinmeta = TupleDescGetAttInMetadata(tupdesc);
+        funcctx->user_fctx = palloc(sizeof(StringPairRows));
+
+        // Load call parameters
+        t1oid = PG_GETARG_OID(0);
+        t1col = get_text_parameter(PG_GETARG_TEXT_P(1));
+        t2oid = PG_GETARG_OID(2);
+        t2col = get_text_parameter(PG_GETARG_TEXT_P(3));
+        tRoid = PG_GETARG_OID(4);
+        tRcol_full = get_text_parameter(PG_GETARG_TEXT_P(5));
+        tRcol_abbr = get_text_parameter(PG_GETARG_TEXT_P(6));
+        exactness = PG_GETARG_FLOAT8(7);
+
+        // Calculate abbreviation dictionary
+        SPI_connect();
+        calculated = _do_calc_pairs(t1oid, t1col, t2oid, t2col, tRoid, tRcol_abbr, tRcol_full, exactness, funcctx->multi_call_memory_ctx);
+        SPI_finish();
+        *(StringPairRows*)funcctx->user_fctx = calculated;
+
+        MemoryContextSwitchTo(oldcontext);
+    }
+
+    funcctx = SRF_PERCALL_SETUP();
+
+    pairs = (StringPairRows*)funcctx->user_fctx;
+
+    if (pairs->read >= pairs->size) {
+        SRF_RETURN_DONE(funcctx);
+    }
+
+    result = HeapTupleGetDatum(BuildTupleFromCStrings(funcctx->attinmeta, pairs->pairs[pairs->read++]));
+
+    SRF_RETURN_NEXT(funcctx, result);
 }

@@ -260,7 +260,6 @@ calc_dict(PG_FUNCTION_ARGS)
         _remove_duplicate_pairs(&calculated);
 
         // Copy abbreviation dictionary into new memory context
-        funcctx->user_fctx = palloc(sizeof(StringPairRows));
         dict = funcctx->user_fctx;
         dict->size = calculated.size;
         dict->read = 0;
