@@ -31,6 +31,18 @@ typedef struct StringPairRows_t {
 
 
 /**
+ * @brief ojbect to store tokenized strings in
+ */
+typedef struct {
+    unsigned long size;
+    /**
+     * Token values
+     */
+    char** ts;
+} TokenSequence;
+
+
+/**
  * @brief Return table name by given Oid. SPI must be prepared.
  *
  * @return palloc'ed pointer to table name
@@ -77,6 +89,19 @@ get_text_parameter(const void *PTR)
 
     return result;
 }
+
+
+/**
+ * @brief Tokenize given string using provided delimeter
+ *
+ * @param string
+ * @param delim delimeter used by strtok
+ * @return Token sequence
+ *
+ * @TODO: Check how strtok() allocates memory
+ */
+TokenSequence
+tokenize(const char* string, const char* delim);
 
 
 #endif /* COMMON_H */

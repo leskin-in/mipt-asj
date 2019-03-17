@@ -14,15 +14,6 @@
 typedef struct {
     unsigned long size;
     /**
-     * Token values
-     */
-    char** ts;
-} TokenSequence;
-
-
-typedef struct {
-    unsigned long size;
-    /**
      * Rules
      */
     char*** rs;
@@ -75,50 +66,6 @@ _cmp_tokens_wrapper(const void* a, const void* b) {
 
 
 /**
- * @brief Tokenize given string using provided delimeter
- *
- * @param string
- * @param delim delimeter used by strtok
- * @return Token sequence
- *
- * @TODO: Check how strtok() allocates memory
- */
-static TokenSequence
-_tokenize(const char* string, const char* delim)
-{
-    char* string_copy;
-
-    TokenSequence result = {0, NULL};
-
-    char* next = NULL;
-    unsigned long size_allocated = 0;
-
-    // Copy string, as strtok() requires
-    string_copy = palloc(strlen(string) + 1);
-    strcpy(string_copy, string);
-
-    // Iterate over all strtok() results
-    next = strtok(string_copy, delim);
-    while (next != NULL) {
-        if (result.size >= size_allocated) {
-            size_allocated = (size_allocated + 1) * 2;
-            result.ts = result.ts == NULL ?
-                palloc(sizeof(*result.ts) * size_allocated) :
-                repalloc(result.ts, sizeof(*result.ts) * size_allocated);
-        }
-        result.ts[result.size++] = next;
-        next = strtok(NULL, delim);
-    }
-
-    if (size_allocated > result.size) {
-        result.ts = repalloc(result.ts, sizeof(*result.ts) * result.size);
-    }
-
-    return result;
-}
-
-
-/**
  * @brief Calculate prefix signature length
  *
  * @param tokens_total total number of tokens in a string whose prefix signature is being calculated
@@ -144,7 +91,7 @@ _prefix_sig(const char* string, double exactness)
     TokenSequence temp;
     TokenSequence result = {0, NULL};
 
-    temp = _tokenize(string, " ");
+    temp = tokenize(string, " ");
     pg_qsort((void*)temp.ts, temp.size, sizeof(*temp.ts), _cmp_tokens_wrapper);
 
     result.size = _prefix_sig_length(temp.size, exactness);
@@ -187,7 +134,7 @@ _rule_apply(const char** rule, TokenSequence ts, unsigned long ts_endpos)
     ts_endpos = ts_endpos >= ts.size ? ts.size - 1 : ts_endpos;
 
     // Tokenize full rule
-    rule_F_tokenized = _tokenize(rule_F, " ");
+    rule_F_tokenized = tokenize(rule_F, " ");
 
     // Check application of a_f rule
     if (strcmp(rule_A, ts.ts[ts_endpos]) == 0) {
@@ -298,7 +245,7 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
 
                 elog(DEBUG1, "\ta_f rule applies: aside %lu '%s' -> rside %lu '%s'", ra.a_f.aside, ra.rule[0], ra.a_f.rside, ra.rule[1]);
 
-                rule_ts = _tokenize(ra.rule[1], " ");
+                rule_ts = tokenize(ra.rule[1], " ");
 
                 for (int t_i = 0; t_i < rule_ts.size; t_i++) {
                     comparation_result = _cmp_tokens(rule_ts.ts[t_i], t);
@@ -530,7 +477,7 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
             rules.rs[rules.size][j] = temp[j];
         }
         rules.size += 1;
-        rule_full_seq = _tokenize(temp[1], " ");
+        rule_full_seq = tokenize(temp[1], " ");
         longest_rule_length = Max(longest_rule_length, rule_full_seq.size);
     }
     SPI_freetuptable(SPI_tuptable);

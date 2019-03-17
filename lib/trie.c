@@ -8,6 +8,7 @@
 
 #include "trie.h"
 
+
 struct trieptr {
     struct trie *trie;
     int c;
@@ -136,8 +137,9 @@ binary_search(struct trie *self, struct trie **child,
         int middle;
         found = 0;
         while (first <= last) {
+            struct trieptr *p;
             middle = (first + last) / 2;
-            struct trieptr *p = &self->children[middle];
+            p = &self->children[middle];
             if (p->c < key[i]) {
                 first = middle + 1;
             } else if (p->c == key[i]) {
@@ -168,12 +170,15 @@ trie_search(const struct trie *self, const char *key)
 /* Insertion functions */
 
 static struct trie *
-grow(struct trie *self) {
+grow(struct trie *self)
+{
     int size = self->size * 2;
+    size_t children_size;
+    struct trie *resized;
     if (size > 255)
         size = 255;
-    size_t children_size = sizeof(struct trieptr) * size;
-    struct trie *resized = repalloc(self, sizeof(*self) + children_size);
+    children_size = sizeof(struct trieptr) * size;
+    resized = repalloc(self, sizeof(*self) + children_size);
     if (resized == NULL)
         return NULL;
     resized->size = size;
@@ -189,12 +194,13 @@ ptr_cmp(const void *a, const void *b)
 static struct trie *
 add(struct trie *self, int c, struct trie *child)
 {
+    int i;
     if (self->size == self->nchildren) {
         self = grow(self);
         if (self == NULL)
             return NULL;
     }
-    int i = self->nchildren++;
+    i = self->nchildren++;
     self->children[i].c = c;
     self->children[i].trie = child;
     qsort(self->children, self->nchildren, sizeof(self->children[0]), ptr_cmp);
@@ -222,9 +228,10 @@ trie_insert(struct trie *trie, const char *key, void *data)
     size_t depth = binary_search(trie, &last, &parent, key);
     while (key[depth] != '\0') {
         struct trie *subtrie = create();
+        struct trie *added;
         if (subtrie == NULL)
             return 1;
-        struct trie *added = add(last, key[depth], subtrie);
+        added = add(last, key[depth], subtrie);
         if (added == NULL) {
             pfree(subtrie);
             return 1;
@@ -245,10 +252,11 @@ trie_insert(struct trie *trie, const char *key, void *data)
 
 static int
 trie_search_subsequences_step(const struct trie *trie, const char *key, int key_start_pos, char ***container_ptr) {
+    int container_length = 0;
+
     if (*container_ptr != NULL) {
         return -1;
     }
-    int container_length = 0;
 
     if (trie->nchildren == 0) {
         // this is a leaf, return
@@ -263,10 +271,9 @@ trie_search_subsequences_step(const struct trie *trie, const char *key, int key_
     for (int i = key_start_pos; i < strlen(key); i++) {
         int first = 0;
         int last = trie->nchildren - 1;
-        int middle;
         // binary search
         while (first <= last) {
-            middle = (first + last) / 2;
+            const int middle = (first + last) / 2;
             const struct trieptr *p = &trie->children[middle];
             if (p->c < key[i]) {
                 first = middle + 1;
@@ -299,6 +306,7 @@ trie_search_subsequences_step(const struct trie *trie, const char *key, int key_
 }
 
 int
-trie_search_subsequences(const struct trie *trie, const char *key, char ***container) {
+trie_search_subsequences(const struct trie *trie, const char *key, char ***container)
+{
     return trie_search_subsequences_step(trie, key, 0, container);
 }

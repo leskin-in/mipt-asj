@@ -1,6 +1,6 @@
 -- Set
 SET log_min_messages = 'DEBUG1';
-SET client_min_messages = 'DEBUG1';
+SET client_min_messages = 'INFO';
 
 
 -- Install extension
