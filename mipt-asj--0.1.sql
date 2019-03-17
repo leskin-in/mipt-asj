@@ -30,10 +30,14 @@ CREATE OR REPLACE FUNCTION
     VOLATILE;
 
 
--- cmp
+-- Compare pairs in JOIN
+-- #1, #2:      Strings to compare
+-- #3, #4, #5:  Abbreviation dictionary table OID, 'full' and 'abbr' column
+-- #6:          Exactness parameter
+-- Return:      boolean
 CREATE OR REPLACE FUNCTION
-    mipt_asj.cmp(INT, TEXT, TEXT)
+    mipt_asj.cmp(TEXT, TEXT, oid, TEXT, TEXT, REAL)
     RETURNS BOOLEAN
-    AS 'MODULE_PATHNAME', 'asjcmp'
+    AS 'MODULE_PATHNAME', 'cmp'
     LANGUAGE C
     VOLATILE;

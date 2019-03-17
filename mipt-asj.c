@@ -8,11 +8,7 @@ PG_MODULE_MAGIC;
 #endif
 
 
-/**
- *
- */
-Datum
-asjcmp(PG_FUNCTION_ARGS)
-{
-    PG_RETURN_BOOL(false);
-}
+PG_FUNCTION_INFO_V1(calc_dict);
+PG_FUNCTION_INFO_V1(calc_pairs);
+PG_FUNCTION_INFO_V1(cmp);
+

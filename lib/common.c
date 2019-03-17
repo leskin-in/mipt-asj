@@ -42,3 +42,11 @@ tokenize(const char* string, const char* delim)
 
     return result;
 }
+
+
+int
+cmp_tokens_wrapper(const void* a, const void* b)
+{
+    return cmp_tokens(*(const char**)a, *(const char**)b);
+}
+

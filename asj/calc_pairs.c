@@ -47,25 +47,6 @@ typedef struct {
 
 
 /**
- * @brief Compare token sequences using special ("reverse") metric
- */
-static inline int
-_cmp_tokens(const char* t1, const char* t2)
-{
-    return strlen(t1) == strlen(t2) ? strcmp(t1, t2) : strlen(t2) - strlen(t1);
-}
-
-
-/**
- * @brief Wrapper around '_cmp_tokens' for qsort
- */
-static int
-_cmp_tokens_wrapper(const void* a, const void* b) {
-    return _cmp_tokens(*(const char**)a, *(const char**)b);
-}
-
-
-/**
  * @brief Calculate prefix signature length
  *
  * @param tokens_total total number of tokens in a string whose prefix signature is being calculated
@@ -92,7 +73,7 @@ _prefix_sig(const char* string, double exactness)
     TokenSequence result = {0, NULL};
 
     temp = tokenize(string, " ");
-    pg_qsort((void*)temp.ts, temp.size, sizeof(*temp.ts), _cmp_tokens_wrapper);
+    pg_qsort((void*)temp.ts, temp.size, sizeof(*temp.ts), cmp_tokens_wrapper);
 
     result.size = _prefix_sig_length(temp.size, exactness);
     result.size = Min(result.size, temp.size);
@@ -210,7 +191,7 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
     // Calculate case 1: current token has no rules that apply to it
     {
         int comparation_result;
-        comparation_result = _cmp_tokens(s.ts[i >= s.size ? s.size - 1 : i], t);
+        comparation_result = cmp_tokens(s.ts[i >= s.size ? s.size - 1 : i], t);
         if (comparation_result > 0) {
             result_current = _calculate_g(s, i - 1, l - 1, t, t_present, rules);
         }
@@ -248,7 +229,7 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
                 rule_ts = tokenize(ra.rule[1], " ");
 
                 for (int t_i = 0; t_i < rule_ts.size; t_i++) {
-                    comparation_result = _cmp_tokens(rule_ts.ts[t_i], t);
+                    comparation_result = cmp_tokens(rule_ts.ts[t_i], t);
                     if (comparation_result == 0) {
                         *t_present = true;
                     }
@@ -271,7 +252,7 @@ _calculate_g(TokenSequence s, long i, long l, const char* t, bool* t_present, Ru
 
                 elog(DEBUG1, "\tf_a rule applies: aside %lu '%s' -> rside %lu '%s'", ra.f_a.aside, ra.rule[1], ra.f_a.rside, ra.rule[0]);
 
-                comparation_result = _cmp_tokens(ra.rule[0], t);
+                comparation_result = cmp_tokens(ra.rule[0], t);
                 if (comparation_result == 0) {
                     *t_present = true;
                 }
@@ -490,7 +471,7 @@ _do_calc_pairs(Oid t1oid, const char* t1col, Oid t2oid, const char* t2col, Oid t
         rows_signatures[j] = palloc(sizeof(*rows_signatures[j]) * rows_used[j]);
         for (unsigned long i = 0; i < rows_used[j]; i++) {
             rows_signatures[j][i] = _prefix_sig(rows[j][i], exactness);
-            elog(DEBUG1, "Prefix signature for rows[%u][%lu] is %lu symbols long", j, i, rows_signatures[j][i].size);
+            elog(DEBUG1, "Prefix signature for rows[%u][%lu] is %lu tokens long", j, i, rows_signatures[j][i].size);
         }
     }
 

@@ -11,8 +11,5 @@
 
 #include "asj/calc_dict.h"
 #include "asj/calc_pairs.h"
+#include "asj/cmp.h"
 
-
-PG_FUNCTION_INFO_V1(calc_dict);
-PG_FUNCTION_INFO_V1(calc_pairs);
-PG_FUNCTION_INFO_V1(asjcmp);

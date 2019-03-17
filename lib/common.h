@@ -43,6 +43,38 @@ typedef struct {
 
 
 /**
+ * @brief Remove element from TokenSequence
+ *
+ * @param ts
+ * @param i
+ *
+ * @return char* removed pointer
+ */
+inline char*
+remove_from_token_sequence(TokenSequence* ts, unsigned long i)
+{
+    char* result;
+    for (unsigned long j = i + 1; j < ts->size; j++) {
+        ts->ts[j - 1] = ts->ts[j];
+    }
+
+    result = ts->ts[ts->size - 1];
+    ts->ts[ts->size - 1] = NULL;
+    ts->size -= 1;
+
+    if (ts->size == 0) {
+        pfree(ts->ts);
+        ts->ts = NULL;
+    }
+    else {
+        ts->ts = repalloc(ts->ts, ts->size);
+    }
+
+    return result;
+}
+
+
+/**
  * @brief Return table name by given Oid. SPI must be prepared.
  *
  * @return palloc'ed pointer to table name
@@ -102,6 +134,35 @@ get_text_parameter(const void *PTR)
  */
 TokenSequence
 tokenize(const char* string, const char* delim);
+
+
+/**
+ * @brief Compare token sequences using special ("reverse") metric
+ */
+inline int
+cmp_tokens(const char* t1, const char* t2)
+{
+    return strlen(t1) == strlen(t2) ? strcmp(t1, t2) : strlen(t2) - strlen(t1);
+}
+
+
+/**
+ * @brief Wrapper around 'cmp_tokens' for qsort
+ */
+int
+cmp_tokens_wrapper(const void* a, const void* b);
+
+
+/**
+ * @brief Swap contents of two pointers
+ */
+inline void
+swap(void** a, void** b)
+{
+    void* t = *b;
+    *b = *a;
+    *a = t;
+}
 
 
 #endif /* COMMON_H */
