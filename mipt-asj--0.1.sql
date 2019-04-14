@@ -10,7 +10,7 @@ CREATE SCHEMA mipt_asj;
 -- Return:      Abbreviation dictionary
 CREATE OR REPLACE FUNCTION
     mipt_asj.calc_dict(oid, TEXT, oid, TEXT)
-    RETURNS TABLE(full VARCHAR, abbr VARCHAR)
+    RETURNS TABLE(f VARCHAR, a VARCHAR)
     AS 'MODULE_PATHNAME', 'calc_dict'
     LANGUAGE C
     VOLATILE;
